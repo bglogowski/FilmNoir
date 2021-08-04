@@ -1,0 +1,1644 @@
+---
+title: "Film Noir: A Data Science Reference"
+date: "12/22/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, echo=FALSE}
+suppressPackageStartupMessages(suppressWarnings(library(dplyr, warn.conflicts = FALSE)))
+options(dplyr.summarise.inform = FALSE)
+suppressPackageStartupMessages(suppressWarnings(library(kableExtra)))
+suppressPackageStartupMessages(suppressWarnings(library(ggplot2)))
+suppressPackageStartupMessages(suppressWarnings(library(tidyr)))
+library(scales)
+library(stringr)
+library(RColorBrewer)
+library(wesanderson)
+
+
+library(lubridate)
+
+library(tidyverse)
+library(knitr)
+#library(timevis)
+
+```
+
+
+This web page is generated from an IMDB data set available on Kaggle:
+
+https://www.kaggle.com/stefanoleone992/imdb-extensive-dataset
+
+For each year, I listed movies that modern audiences have found relevant or "good" as defined by the ratings recorded in the IMDB rating system.
+
+Important personalities in the Film Noir movement are listed in bold text.
+
+List of actors taken from:
+
+https://www.imdb.com/list/ls076105318/
+
+List of Directors taken from:
+
+https://www.imdb.com/list/ls050219071/
+
+
+
+
+
+
+```{r, echo=FALSE}
+
+get_background_color <- function(data) {
+  
+  #my_pallette <- colorRampPalette(brewer.pal(9, "YlOrRd"))(256)
+  my_pallette <- colorRampPalette(brewer.pal(9, "YlGnBu"))(384)[129:384]
+  
+  min_v <- min(data)
+  max_v <- max(data)
+  
+  my_colors <- rep("#FFFFFF", length(data))
+  
+  range_v <- seq(from = min_v, to = max_v, length.out = 256)
+  
+  c <- 1
+  for (i in data) {
+    x <- which.min(abs(range_v - i))
+    my_colors[c] <- my_pallette[x]
+    c <- c + 1
+  }
+  
+  return(my_colors)
+}
+
+
+get_text_color <- function(data) {
+
+  result <- rep("white", length(data))
+
+  result[data < median(data)] <- "black"
+
+  
+  
+  return(result)
+}
+
+get_text_bold <- function(data) {
+  
+  mymark <- quantile(data)[4]
+
+  result <- rep(T, length(data))
+
+  result[data < mymark] <- F
+
+  
+  
+  return(result)
+}
+
+getSeason <- function(DATES) {
+  WS <- as.Date("2012-12-15", format = "%Y-%m-%d") # Winter Solstice
+  SE <- as.Date("2012-3-15",  format = "%Y-%m-%d") # Spring Equinox
+  SS <- as.Date("2012-6-15",  format = "%Y-%m-%d") # Summer Solstice
+  FE <- as.Date("2012-9-15",  format = "%Y-%m-%d") # Fall Equinox
+  
+  # Convert dates from any year to 2012 dates
+  d <- as.Date(strftime(DATES, format="2012-%m-%d"))
+  
+  ifelse (d >= WS | d < SE, "Winter",
+          ifelse (d >= SE & d < SS, "Spring",
+                  ifelse (d >= SS & d < FE, "Summer", "Fall")))
+}
+
+
+prune_actors <- function(data) {
+  
+  data <- sapply(lapply(data, `[`, 1:5), paste0, collapse=", ")
+  
+  all_actors <- c("Gloria Grahame",
+                  "Glenn Ford ",
+                  "Barbara Stanwyck",
+                  "Humphrey Bogart",
+                  "Edward G. Robinson",
+                  "Jane Darwell",
+                  "Rita Hayworth",
+                  "Fred MacMurray",
+                  "Gene Tierney",
+                  "Jane Russell",
+                  "Gloria Swanson",
+                  "Mary Astor",
+                  "Dick Powell",
+                  "Claire Trevor",
+                  "Lana Turner",
+                  "Jean Peters",
+                  "Thelma Ritter",
+                  "Veronica Lake",
+                  "Alan Ladd",
+                  "Linda Darnell",
+                  "Joan Bennett",
+                  "Robert Ryan",
+                  "Robert Mitchum",
+                  "Dana Andrews",
+                  "Richard Widmark",
+                  "Richard Conte",
+                  "John Garfield",
+                  "Van Heflin",
+                  "Wendell Corey",
+                  "Shelley Winters",
+                  "George Sanders",
+                  "Joan Crawford",
+                  "Ida Lupino",
+                  "Sterling Hayden",
+                  "Peggy Cummins",
+                  "Ralph Meeker",
+                  "John Dall",
+                  "Cathy O'Donnell",
+                  "Farley Granger",
+                  "Orson Welles",
+                  "James Stewart",
+                  "Burt Lancaster",
+                  "Yvonne De Carlo",
+                  "Dan Duryea",
+                  "Edmond O'Brien",
+                  "Ava Gardner",
+                  "William Conrad",
+                  "Hume Cronyn",
+                  "Cornel Wilde",
+                  "Brian Donlevy")
+  
+  #data <- lapply(all_actors, function(t) gsub(t, "<b><font color=#ACACAC>\\1_</font></b>", data))
+  
+  for (actor in all_actors) {
+    data <- gsub(paste('(',actor,')', sep=''), "<b>\\1</b>", data)
+  }
+  
+  #data <- gsub("", "<b></b>", data)
+  
+  return(data)
+  
+  
+}
+
+
+prune_directors <- function(data) {
+  
+  all_directors <- c("Robert Siodmak",
+                     "Fritz Lang",
+                     "Otto Preminger",
+                     "Orson Welles",
+                     "Billy Wilder",
+                     "Anthony Mann",
+                     "Richard Fleischer",
+                     "Jules Dassin",
+                     "Alfred Hitchcock",
+                     "Joseph H. Lewis",
+                     "Raoul Walsh",
+                     "John Farrow",
+                     "John Huston",
+                     "Anatole Litvak",
+                     "Robert Wise",
+                     "Michael Curtiz",
+                     "Henry Hathaway",
+                     "Phil Karlson",
+                     "John Cromwell",
+                     "Budd Boetticher")
+  
+  for (director in all_directors) {
+    data <- gsub(paste('(',director,')', sep=''), "<b>\\1</b>", data)
+  }
+  return(data)
+  
+}
+
+prepare_movie_data <- function(data) {
+  columns <- c('original_title', 'year', 'duration', 'country', 'genre', 'director', 'actors', 'avg_vote', 'votes')
+  
+  data <- data[, columns]
+  colnames(data)[1] <- 'title'
+  
+  #data$title <- gsub("How Green Was My Valley", "How Green Was My Valley<br>Best Picture", data$title)
+  #data[data$title=="How Green Was My Valley", "gender"]
+  
+  # noir[noir$original_title == "The Maltese Falcon" & noir$year == 1941,]$original_title
+  # [1] "The Maltese Falcon"
+  
+  data$genre <- strsplit(gsub(", ", "|", data$genre), split = "|", fixed = TRUE, useBytes = TRUE)
+  #data$language <- strsplit(gsub(", ", "|", data$language), split = "|", fixed = TRUE, useBytes = TRUE)
+  data$director <- strsplit(gsub(", ", "|", data$director), split = "|", fixed = TRUE, useBytes = TRUE)
+  #data$writer <- strsplit(gsub(", ", "|", data$writer), split = "|", fixed = TRUE, useBytes = TRUE)
+  data$actors <- strsplit(gsub(", ", "|", data$actors), split = "|", fixed = TRUE, useBytes = TRUE)
+  data$country <- strsplit(gsub(", ", "|", data$country), split = "|", fixed = TRUE, useBytes = TRUE)
+  
+
+  
+  #data$date_published <- as.Date(data$date_published)
+  
+  data$year <- as.integer(data$year)
+
+  
+  
+  data$genre <- sapply(data$genre, paste0, collapse="<br>")
+  
+  data$genre <- gsub("Film-Noir", "<b>Film-Noir</b>", data$genre)
+  
+  data$country <- sapply(data$country, paste0, collapse="<br>")
+  
+  data$director <- sapply(data$director, paste0, collapse="<br>")
+  data$director <- prune_directors(data$director)
+  
+
+  
+    #data$director <- prune_directors(data$director)
+    
+  data$actors <- prune_actors(data$actors)
+  
+  return(data)
+  
+}
+
+read_data_file <- function(file_name) {
+  setwd('/Users/glogowsk/git/noir')
+  
+  read.csv(file_name, sep = ',', header = TRUE)
+}
+
+
+read_movie_file <- function(file_name) {
+  movies  <- read_data_file('imdb/movies.csv')
+  
+  #movies$genre <- strsplit(gsub(", ", "|", movies$genre), split = "|", fixed = TRUE, useBytes = TRUE)
+  #movies$language <- strsplit(gsub(", ", "|", movies$language), split = "|", fixed = TRUE, useBytes = TRUE)
+  #movies$director <- strsplit(gsub(", ", "|", movies$director), split = "|", fixed = TRUE, useBytes = TRUE)
+  #movies$writer <- strsplit(gsub(", ", "|", movies$writer), split = "|", fixed = TRUE, useBytes = TRUE)
+  #movies$actors <- strsplit(gsub(", ", "|", movies$actors), split = "|", fixed = TRUE, useBytes = TRUE)
+  #movies$country <- strsplit(gsub(", ", "|", movies$country), split = "|", fixed = TRUE, useBytes = TRUE)
+  
+  #movies$date_published <- as.Date(movies$date_published)
+  
+  #movies$year <- as.integer(movies$year)
+  
+  movies <- prepare_movie_data(movies)
+  
+  return(movies)
+}
+
+
+  
+show_top10_table <- function(data) {
+  
+  # rep(c("#F0F0F0","#FFFFFF"), 5)
+  
+  #    column_spec(2, bold = T, color = "black", background = rep(c("#F0F0F0","#FFFFFF"), 5)) %>%
+#    column_spec(3:6, bold = F, color = "black", background = rep(c("#F0F0F0","#FFFFFF"), 5)) %>%
+
+  # kable_styling(bootstrap_options = "striped", full_width = F, position = "left") %>%
+  
+  my <- c('Title', 'Year', 'Length', 'Country', 'Genres', 'Director', 'Actors', 'Ave. Score', 'No. Votes')
+  
+  #row.names(data) <- NULL
+  
+  
+  #data$genre <- sapply(data$genre, paste0, collapse="<br>")
+  #data$country <- sapply(data$country, paste0, collapse="<br>")
+  #data$director <- sapply(data$director, paste0, collapse="<br>")
+  #data$actors <- sapply(data$actors, paste0, collapse="<br>")
+  
+  #data$actors <- prune_actors(data$actors)
+  
+
+
+  data %>%
+    kbl("html", escape = F, col.names = my, row.names = T) %>%
+    kable_classic(full_width = T, html_font = "Helvetica") %>%
+    kable_styling(bootstrap_options = c("striped", "hover", "condensed"))  %>%
+    column_spec(1:10, extra_css = "vertical-align:top;") %>%
+    column_spec(2, bold = T, width = "15em") %>%
+    column_spec(6, width = "8em") %>%
+    column_spec(7, width = "12em") %>%
+    column_spec(8, width = "15em") %>%
+    column_spec(9, width = "4em", bold = T, color = "white", background = spec_color(data$avg_vote, begin = 0.01, end = 0.80)) %>%
+    column_spec(10, width = "6em", bold = T, color = "white", background = spec_color(data$votes, begin = 0.01, end = 0.80)) %>%
+    collapse_rows(columns = 9)
+
+  #%>%
+  #  column_spec(2, extra_css = "vertical-align:top;", bold = T, color = "black", background = rep(c("#F0F0F0","#FFFFFF"), 5)) %>%
+  #  column_spec(3:6, extra_css = "vertical-align:top;", bold = F, color = "black", background = rep(c("#F0F0F0","#FFFFFF"), 5)) %>%
+  #  column_spec(7, extra_css = "vertical-align:top;", bold = T, color = "white", background = spec_color(data$avg_vote, begin = 0.01, end = 0.80)) %>%
+  #  column_spec(8, extra_css = "vertical-align:top;", bold = T, color = "white", background = spec_color(data$votes, begin = 0.01, end = 0.80))  %>%
+  #  collapse_rows(columns = 7) %>%
+  #  column_spec(7, extra_css = "vertical-align:top;")
+    
+  
+}
+
+
+
+show_noir_table <- function(data) {
+  
+  my <- c('Title', 'Year', 'Length', 'Country', 'Genres', 'Director', 'Actors', 'Ave. Score', 'No. Votes')
+  
+  #data$actors <- prune_actors(data$actors)
+  
+  if(nrow(data) > 10) {
+    
+    data %>%
+      kbl("html", escape = F, col.names = my) %>%
+      kable_classic(full_width = T, html_font = "Helvetica") %>%
+      kable_styling(bootstrap_options = c("striped", "hover", "condensed"))  %>%
+      column_spec(1:9, extra_css = "vertical-align:top;") %>%
+          column_spec(1, bold = T, width = "15em") %>%
+      column_spec(5, width = "8em") %>%
+    column_spec(6, width = "12em") %>%
+    column_spec(7, width = "15em") %>%
+      row_spec(1, color = "white", background = "#210313") %>%
+      row_spec(2:3, color = "white", background = "#890B0B") %>%
+      row_spec(4:5, color = "white", background = "#D7261E") %>%
+      row_spec(6:9, color = "black", background = "#fcc8bc") %>%
+      column_spec(8, width = "4em", bold = T, color = "white", background = spec_color(data$avg_vote, begin = 0.01, end = 0.80)) %>%
+      column_spec(9, width = "6em", bold = T, color = "white", background = spec_color(data$votes, begin = 0.01, end = 0.80)) %>%
+      collapse_rows(columns = 8)
+    
+  } else if (nrow(data) > 4) {
+    
+    data %>%
+      kbl("html", escape = F, col.names = my) %>%
+      kable_classic(full_width = T, html_font = "Helvetica") %>%
+      kable_styling(bootstrap_options = c("striped", "hover", "condensed"))  %>%
+      column_spec(1:9, extra_css = "vertical-align:top;") %>%
+          column_spec(1, bold = T, width = "15em") %>%
+      column_spec(5, width = "8em") %>%
+    column_spec(6, width = "12em") %>%
+    column_spec(7, width = "15em") %>%
+      row_spec(1, color = "white", background = "#210313") %>%
+      row_spec(2, color = "white", background = "#890B0B") %>%
+      row_spec(3, color = "white", background = "#D7261E") %>%
+      row_spec(4, color = "black", background = "#fcc8bc") %>%
+      column_spec(8, width = "4em", bold = T, color = "white", background = spec_color(data$avg_vote, begin = 0.01, end = 0.80)) %>%
+      column_spec(9, width = "6em", bold = T, color = "white", background = spec_color(data$votes, begin = 0.01, end = 0.80)) %>%
+      collapse_rows(columns = 8)
+    
+  } else {
+    
+    data %>%
+      kbl("html", escape = F, col.names = my) %>%
+      kable_classic(full_width = T, html_font = "Helvetica") %>%
+      kable_styling(bootstrap_options = c("striped", "hover", "condensed"))  %>%
+      column_spec(1:9, extra_css = "vertical-align:top;") %>%
+          column_spec(1, bold = T, width = "15em") %>%
+      column_spec(5, width = "8em") %>%
+    column_spec(6, width = "12em") %>%
+    column_spec(7, width = "15em") %>%
+      row_spec(1, color = "white", background = "#210313") %>%
+      column_spec(8, width = "4em", bold = T, color = "white", background = spec_color(data$avg_vote, begin = 0.01, end = 0.80)) %>%
+      column_spec(9, width = "6em", bold = T, color = "white", background = spec_color(data$votes, begin = 0.01, end = 0.80)) %>%
+      collapse_rows(columns = 8)
+    
+    
+  }
+  
+}
+
+
+#show_noir_table <- function(data) { }
+
+
+
+
+
+prepare_noir_data <- function(data, year) {
+  
+  #data <- prepare_data(data)
+  
+  data <- data %>% filter(grepl('Film-Noir', genre))
+  data <- data[data$year == year, ]
+  data <- data[order(data$year,-data$avg_vote), ]
+  
+  data <- data.frame(data)
+  row.names(data) <- 1:nrow(data)
+  
+  return(data)
+}
+
+prepare_western_data <- function(data, year) {
+  
+  #data <- prepare_data(data)
+  
+  data <- data %>% filter(grepl('Western', genre))
+  data <- data[data$year == year, ]
+  data <- data[order(data$year,-data$avg_vote), ]
+  
+  data <- data.frame(data)
+  row.names(data) <- 1:nrow(data)
+  
+  return(data)
+}
+
+prepare_top10_data <- function(data, year) {
+  
+  #data <- prepare_data(data)
+  
+  data <- data[data$year == year, ]
+  data <- data[data$country == 'USA', ]
+  data <- data[order(data$year, -data$avg_vote),][1:10, ]
+  
+  data <- data.frame(data)
+  row.names(data) <- 1:nrow(data)
+  
+  return(data)
+}
+
+```
+
+
+
+
+
+```{r, echo=FALSE}
+#imdb_ratings <- read_data_file('imdb/ratings.csv')
+imdb_movies  <- suppressWarnings(read_movie_file('imdb/movies.csv'))
+
+#film_noir <- imdb_movies %>% filter(grepl('Film-Noir', genre))
+#noir_ratings <- imdb_ratings %>%  filter(imdb_title_id %in% film_noir$imdb_title_id)
+
+#old_cols <- c('imdb_title_id', 'original_title', 'year', 'duration', 'country', 'language', 'genre', 'avg_vote', 'votes')
+#new_cols <- c('original_title', 'year', 'duration', 'country', 'genre', 'director', 'actors', 'avg_vote', 'votes')
+
+
+#sorted_noir <- film_noir[order(film_noir$year,-film_noir$avg_vote), new_cols ]
+#colnames(sorted_noir)[1] <- 'title'
+
+```
+
+
+
+To establish some context for the era itself, here is a chart which shows how modern audiences view the quality of the films produced during the era. The films are grouped by the season in which they were released.
+
+<center>
+```{r, echo=FALSE, message=FALSE}
+
+movies  <- read_data_file('imdb/movies.csv')
+
+movies$genre <- strsplit(gsub(", ", "|", movies$genre), split = "|", fixed = TRUE, useBytes = TRUE)
+
+movies$date_published <- as.Date(movies$date_published)
+
+movies$year <- as.factor(movies$year)
+
+
+noir <- movies %>% filter(grepl('Film-Noir', genre))
+noir_filter <- noir
+
+western <- movies %>% filter(grepl('Western', genre))
+western_filter <- western
+
+
+noir$budget <- as.numeric(gsub("\\$", "", noir$budget))
+
+budgets <- noir %>% drop_na(budget)
+
+noir_ratings <- noir
+
+noir_people <- noir
+
+noir_people$director <- strsplit(gsub(", ", "|", noir_people$director), split = "|", fixed = TRUE, useBytes = TRUE)
+noir_people$actors <- strsplit(gsub(", ", "|", noir_people$actors), split = "|", fixed = TRUE, useBytes = TRUE)
+
+noir_directors <- unlist(noir_people$director)
+noir_actors <- unlist(noir_people$actors)
+
+
+noir <- noir %>% drop_na(date_published)
+
+
+
+
+
+
+noir$Season <- getSeason(noir$date_published)
+
+
+
+#+
+#  geom_smooth(method = "lm", se = FALSE, fullrange = T) +
+#  geom_hline(aes(yintercept = mean(avg_vote), colour = "black"), noir)
+
+# stat_smooth(method = "loess", formula = y ~ x, size = 1, col = 'red', fullrange = T) +
+
+```
+
+
+```{r, echo=FALSE, message=FALSE}
+noir_by_year <- data.frame(table(droplevels(noir$year)))
+
+noir_by_year$Var1 <- as.numeric(levels(data.frame(table(droplevels(noir$year)))$Var1))
+
+ggplot(noir_by_year, aes(x=Var1, y=Freq)) + 
+  geom_col(fill=get_background_color(noir_by_year$Freq)) +
+  geom_smooth(formula = y ~ x, method = "loess", se = FALSE, span = 1.17, size=0.5, colour = "black", linetype="twodash") +
+  ylab("Number of Films") +
+  xlab("Year") +
+  ggtitle("Film Noir Productions over Time", subtitle = "The number of Film Noir movies released each year") +
+  theme_bw()
+
+  
+```
+
+
+
+```{r, echo=FALSE, message=FALSE}
+
+#noir_table <- data.frame(table(noir$Season))
+
+noir_table <- data.frame(table(droplevels(noir[, c("Season", "year")])))
+
+#colnames(noir_table) <- c('Season', 'Number of Films')
+
+#ggplot(noir_table, aes(x = Season, y = Freq)) +
+#  geom_bar(stat="identity", fill = c("#ff0000", "#00ff00", "#0000ff", "#87cefa"), position="stack") +
+#  xlab('Season') +
+#  ylab('Number of Films')
+
+colnames(noir_table) <- c("Season", "Year", "Freq")
+
+library(viridis)
+
+ggplot(noir_table, aes(x = Season, y = Freq)) +
+  geom_col(aes(fill = Year)) +
+  xlab('Season') +
+  ylab('Number of Films Released') +
+  ggtitle("Seasonality of Film Noir releases", subtitle = "All films released in each season grouped by year of release") +
+  theme_bw() + scale_fill_viridis(discrete = TRUE)
+
+#scale_fill_hue(c=100, l=55)
+
+
+ggplot(noir_table[as.numeric(levels(noir_table$Year)) > 1939,], aes(x = Season, y = Freq)) +
+  stat_boxplot(geom = 'errorbar', width = 0.5) +
+  geom_boxplot(outlier.colour="black", outlier.shape=16,
+               outlier.size=2, notch=F, aes(fill = Season), show.legend = FALSE) + 
+  ggtitle("Seasonal Difference in Film Noir Releases", subtitle = "This only includes films released beginning in 1940") +
+  ylab("Number of Films Released") +
+  theme_bw()
+
+
+```
+
+
+```{r, echo=FALSE, message=FALSE}
+
+
+
+ggplot(noir, aes(x = date_published, y = avg_vote, color = Season)) + 
+  geom_point(aes(shape = Season, color = Season, size = votes), position = "jitter") +
+  scale_shape_manual(values=c(21, 22, 23, 24)) +
+  geom_smooth(formula = 'y ~ x', method = "lm", se = FALSE, fullrange = T, size = 0.5) +
+  ylab("Average Rating") + 
+  xlab("Release Date") +
+  ggtitle("Quality of Film Noir Productions over Time", subtitle = "Grouped by the season of the year in which the film was released") +
+  labs(size='Votes') +
+  theme_bw()
+
+#+ scale_color_manual(values=wes_palette(n=5, name="Rushmore1")[2:5])
+
+```
+
+
+
+
+
+
+
+</center>
+
+# Top 20
+
+#### Most Highly Rated Film Noir Productions
+```{r, echo=FALSE, message=FALSE}
+vote_columns <- c('original_title', 'year', 'country', 'avg_vote', 'votes', 'reviews_from_users', 'reviews_from_critics')
+
+
+
+noir_ratings <- noir_ratings[, vote_columns]
+colnames(noir_ratings)[1] <- 'title'
+
+top_20_by_ratings <- data.frame(noir_ratings[order(-noir_ratings$avg_vote,-noir_ratings$votes), ][1:20,])
+
+
+top_20_by_votes <- data.frame(noir_ratings[order(-noir_ratings$votes,-noir_ratings$avg_vote), ][1:20,])
+
+top_20_by_users <- data.frame(noir_ratings[order(-noir_ratings$reviews_from_users,-noir_ratings$avg_vote), ][1:20,])
+top_20_by_critics <- data.frame(noir_ratings[order(-noir_ratings$reviews_from_critics,-noir_ratings$avg_vote), ][1:20,])
+
+row.names(top_20_by_ratings) <- 1:nrow(top_20_by_ratings)
+row.names(top_20_by_votes) <- 1:nrow(top_20_by_votes)
+
+row.names(top_20_by_users) <- 1:nrow(top_20_by_users)
+row.names(top_20_by_critics) <- 1:nrow(top_20_by_critics)
+
+my <- c('Title', 'Year', 'Country', 'Ave. Score', 'No. Votes', 'User Reviews', 'Critic Reviews')
+
+
+top_20_by_ratings %>%
+  kbl("html", escape = F, col.names = my, row.names = T) %>%
+  kable_classic(full_width = T, html_font = "Helvetica") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  column_spec(2, bold = T) %>%
+  column_spec(5, width = "4em", bold = T, color = "white", background = spec_color(top_20_by_ratings$avg_vote, begin = 0.01, end = 0.80)) %>%
+  column_spec(6, width = "6em", bold = T, color = "white", background = spec_color(top_20_by_ratings$votes, begin = 0.01, end = 0.80)) %>%
+  column_spec(7, width = "6em", bold = T, color = "white", background = spec_color(top_20_by_ratings$reviews_from_users, begin = 0.01, end = 0.80)) %>%
+  column_spec(8, width = "6em", bold = T, color = "white", background = spec_color(top_20_by_ratings$reviews_from_critics, begin = 0.01, end = 0.80))
+
+
+```
+
+
+
+#### Most Popular Film Noir Productions by Votes
+```{r, echo=FALSE, message=FALSE}
+  top_20_by_votes %>%
+    kbl("html", escape = F, col.names = my, row.names = T) %>%
+    kable_classic(full_width = T, html_font = "Helvetica") %>%
+    kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+    column_spec(2, bold = T) %>%
+    column_spec(5, width = "4em", bold = T, color = "white", background = spec_color(top_20_by_votes$avg_vote, begin = 0.01, end = 0.80)) %>%
+    column_spec(6, width = "6em", bold = T, color = "white", background = spec_color(top_20_by_votes$votes, begin = 0.01, end = 0.80)) %>%
+    column_spec(7, width = "6em", bold = T, color = "white", background = spec_color(top_20_by_ratings$reviews_from_users, begin = 0.01, end = 0.80)) %>%
+    column_spec(8, width = "6em", bold = T, color = "white", background = spec_color(top_20_by_ratings$reviews_from_critics, begin = 0.01, end = 0.80))
+
+```
+
+
+#### Most Popular Film Noir Productions with Users
+```{r, echo=FALSE, message=FALSE}
+top_20_by_users %>%
+  kbl("html", escape = F, col.names = my, row.names = T) %>%
+  kable_classic(full_width = T, html_font = "Helvetica") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  column_spec(2,
+              bold = T) %>%
+  column_spec(5,
+              width = "4em",
+              bold = get_text_bold(top_20_by_users$avg_vote),
+              color = get_text_color(top_20_by_users$avg_vote),
+              background = spec_color(top_20_by_users$avg_vote)) %>%
+  column_spec(6,
+              width = "6em",
+              bold = get_text_bold(top_20_by_users$votes),
+              color = get_text_color(top_20_by_users$votes),
+              background = spec_color(top_20_by_users$votes)) %>%
+  column_spec(7,
+              width = "6em",
+              bold = get_text_bold(top_20_by_users$reviews_from_users),
+              color = get_text_color(top_20_by_users$reviews_from_users),
+              background = spec_color(top_20_by_users$reviews_from_users)) %>%
+  column_spec(8,
+              width = "6em",
+              bold = get_text_bold(top_20_by_users$reviews_from_critics),
+              color = get_text_color(top_20_by_users$reviews_from_critics),
+              background = get_background_color(top_20_by_users$reviews_from_critics))
+
+```
+
+#### Most Popular Film Noir Productions with Critics
+```{r, echo=FALSE, message=FALSE}
+top_20_by_critics %>%
+  kbl("html", escape = F, col.names = my, row.names = T) %>%
+  kable_classic(full_width = T, html_font = "Helvetica") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  column_spec(2, bold = T) %>%
+  column_spec(5,
+              width = "4em",
+              bold = get_text_bold(top_20_by_critics$avg_vote),
+              color = get_text_color(top_20_by_critics$avg_vote),
+              background = get_background_color(top_20_by_critics$avg_vote)) %>%
+  column_spec(6,
+              width = "6em",
+              bold = get_text_bold(top_20_by_critics$votes),
+              color = get_text_color(top_20_by_critics$votes),
+              background = get_background_color(top_20_by_critics$votes)) %>%
+  column_spec(7,
+              width = "6em",
+              bold = get_text_bold(top_20_by_critics$reviews_from_users),
+              color = get_text_color(top_20_by_critics$reviews_from_users),
+              background = get_background_color(top_20_by_critics$reviews_from_users)) %>%
+  column_spec(8,
+              width = "6em",
+              bold = get_text_bold(top_20_by_critics$reviews_from_critics),
+              color = get_text_color(top_20_by_critics$reviews_from_critics),
+              background = get_background_color(top_20_by_critics$reviews_from_critics))
+
+```
+
+
+#### Most Expensive Film Noir Productions
+
+```{r, echo=FALSE, message=FALSE}
+
+budget_columns <- c('original_title', 'year', 'country', 'avg_vote', 'votes', 'budget')
+
+budgets <- budgets[, budget_columns]
+colnames(budgets)[1] <- 'title'
+
+
+top_20_by_budget <- data.frame(budgets[order(-budgets$budget), ][1:20,])
+
+row.names(top_20_by_budget ) <- 1:nrow(top_20_by_budget)
+
+#top_20_by_budget$Dollars <- dollar_format()(as.numeric(top_20_by_budget$budget))
+
+my <- c('Title', 'Year', 'Country', 'Ave. Score', 'No. Votes', 'Budget')
+
+library(formattable)
+top_20_by_budget$budget <- currency(top_20_by_budget$budget, digits = 0L)
+
+top_20_by_budget %>%
+  kbl("html", escape = F, col.names = my, row.names = T) %>%
+  kable_classic(full_width = T, html_font = "Helvetica") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  column_spec(2,
+              bold = T) %>%
+  column_spec(5,
+              width = "4em",
+              bold = get_text_bold(top_20_by_budget$avg_vote),
+              color = get_text_color(top_20_by_budget$avg_vote),
+              background = get_background_color(top_20_by_budget$avg_vote)) %>%
+  column_spec(6,
+              width = "6em",
+              bold = get_text_bold(top_20_by_budget$votes),
+              color = get_text_color(top_20_by_budget$votes),
+              background = get_background_color(top_20_by_budget$votes)) %>%
+  column_spec(7,
+              width = "12em",
+              bold = get_text_bold(top_20_by_budget$budget),
+              color = get_text_color(top_20_by_budget$budget),
+              background = get_background_color(top_20_by_budget$budget))
+
+    #    column_spec(1:6, extra_css = "vertical-align:top;") %>%
+  #  column_spec(1, bold = T, width = "15em") %>%
+  #  column_spec(5, width = "8em") %>%
+  #  column_spec(6, width = "12em") %>%
+  #  column_spec(7, width = "15em") %>%
+  #  column_spec(8, width = "4em", bold = T, color = "white", background = spec_color(data$avg_vote, begin = 0.01, end = 0.80)) %>%
+  #  column_spec(9, width = "6em", bold = T, color = "white", background = spec_color(data$votes, begin = 0.01, end = 0.80)) %>%
+   # collapse_rows(columns = 8)
+
+```
+
+#### Most Remarkable Film Noir Productions: Everyone agrees you should see...
+```{r, echo=FALSE, message=FALSE}
+
+my <- c('Title', 'Year', 'Country', 'Ave. Score', 'No. Votes', 'User Reviews', 'Critic Reviews')
+
+top_10_by_all <- top_20_by_ratings[top_20_by_ratings$title %in% top_20_by_votes$title, ]
+top_10_by_all <- top_10_by_all[top_10_by_all$title %in% top_20_by_users$title, ]
+top_10_by_all <- top_10_by_all[top_10_by_all$title %in% top_20_by_critics$title, ]
+
+top_20_by_budget <- data.frame(top_20_by_budget[order(-top_20_by_budget$avg_vote,-top_20_by_budget$votes), ])
+row.names(top_10_by_all) <- 1:nrow(top_10_by_all)
+
+
+  top_10_by_all %>%
+    kbl("html", escape = F, col.names = my, row.names = T) %>%
+    kable_classic(full_width = T, html_font = "Helvetica") %>%
+    kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+    column_spec(2,
+                bold = T) %>%
+    column_spec(5,
+                width = "4em",
+                bold = get_text_bold(top_10_by_all$avg_vote),
+                color = get_text_color(top_10_by_all$avg_vote), 
+                background = get_background_color(top_10_by_all$avg_vote)) %>%
+    column_spec(6,
+                width = "6em",
+                bold = get_text_bold(top_10_by_all$votes),
+                color = get_text_color(top_10_by_all$votes),
+                background = get_background_color(top_10_by_all$votes)) %>%
+    column_spec(7,
+                width = "6em",
+                bold = get_text_bold(top_10_by_all$reviews_from_users),
+                color = get_text_color(top_10_by_all$reviews_from_users),
+                background = get_background_color(top_10_by_all$reviews_from_users)) %>%
+    column_spec(8,
+                width = "6em",
+                bold = get_text_bold(top_10_by_all$reviews_from_critics),
+                color = get_text_color(top_10_by_all$reviews_from_critics),
+                background = get_background_color(top_10_by_all$reviews_from_critics))
+
+
+```
+
+
+#### Most prolific Directors sorted by the average rating of their movies
+```{r, echo=FALSE, message=FALSE}
+
+ranked_directors <- table(noir_directors) %>% 
+  as.data.frame() %>% 
+  arrange(desc(Freq))
+
+ranked_directors <- data.frame(ranked_directors[ranked_directors$Freq > 4, ])
+
+
+ranked_directors$noir_avg_vote <- rep(0, nrow(ranked_directors))
+ranked_directors$avg_vote <- rep(0, nrow(ranked_directors))
+ranked_directors$noir_votes <- rep(0, nrow(ranked_directors))
+ranked_directors$votes <- rep(0, nrow(ranked_directors))
+
+
+for (a in ranked_directors$noir_director) {
+  #ranked_directors[ranked_directors$noir_director == a, 'avg_vote'] <- round(mean(movies[str_detect(movies$director, a), 'avg_vote']), digits = 3)
+  ranked_directors[ranked_directors$noir_director == a, 'avg_vote'] <- round(mean(movies[str_detect(movies[, 'director'], a), 'avg_vote']), digits = 1)
+  ranked_directors[ranked_directors$noir_director == a, 'votes'] <- sum(movies[str_detect(movies[, 'director'], a), 'votes'])
+  
+  ranked_directors[ranked_directors$noir_director == a, 'noir_avg_vote'] <- round(mean(noir_filter[str_detect(noir_filter[, 'director'], a), 'avg_vote']), digits = 1)
+  ranked_directors[ranked_directors$noir_director == a, 'noir_votes'] <- sum(noir_filter[str_detect(noir_filter[, 'director'], a), 'votes'])
+  
+  
+}
+
+ranked_directors <- ranked_directors[order(-ranked_directors$Freq,-ranked_directors$noir_avg_vote, -ranked_directors$noir_votes), ]
+
+
+#colnames(ranked_actors) <- c('Actor', 'No. Films')
+row.names(ranked_directors) <- 1:nrow(ranked_directors)
+
+
+#row.names(ranked_directors) <- 1:nrow(ranked_directors)
+
+
+my <- c('Director', 'Noir Films', 'Noir Score', 'Ave. Score', 'Noir Votes', 'All Votes')
+ranked_directors %>%
+  kbl("html", escape = F, col.names = my, row.names = T) %>%
+  kable_classic(full_width = T, html_font = "Helvetica") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  column_spec(2,
+              bold = T) %>%
+  column_spec(3,
+              width = "4em",
+              bold = get_text_bold(ranked_directors$Freq),
+              color = get_text_color(ranked_directors$Freq),
+              background = get_background_color(ranked_directors$Freq)) %>%
+  column_spec(4,
+              width = "4em",
+              bold = get_text_bold(ranked_directors$noir_avg_vote),
+              color = get_text_color(ranked_directors$noir_avg_vote),
+              background = get_background_color(ranked_directors$noir_avg_vote)) %>%
+  column_spec(5,
+              width = "4em",
+              bold = get_text_bold(ranked_directors$avg_vote),
+              color = get_text_color(ranked_directors$avg_vote),
+              background = get_background_color(ranked_directors$avg_vote)) %>%
+  column_spec(6,
+              width = "6em",
+              bold = get_text_bold(ranked_directors$noir_votes),
+              color = get_text_color(ranked_directors$noir_votes),
+              background = get_background_color(ranked_directors$noir_votes)) %>%
+  column_spec(7,
+              width = "6em", bold = get_text_bold(ranked_directors$votes),
+              color = get_text_color(ranked_directors$votes),
+              background = get_background_color(ranked_directors$votes))
+
+
+```
+
+#### Most prolific Actors sorted by the average rating of their movies
+```{r, echo=FALSE, message=FALSE}
+
+ranked_actors <- table(noir_actors) %>% 
+  as.data.frame() %>% 
+  arrange(desc(Freq))
+
+ranked_actors <- data.frame(ranked_actors[ranked_actors$Freq > 11, ])
+
+ranked_actors$noir_avg_vote <- rep(0, nrow(ranked_actors))
+ranked_actors$avg_vote <- rep(0, nrow(ranked_actors))
+ranked_actors$noir_votes <- rep(0, nrow(ranked_actors))
+ranked_actors$votes <- rep(0, nrow(ranked_actors))
+
+
+for (a in ranked_actors$noir_actor) {
+  ranked_actors[ranked_actors$noir_actor == a, 'avg_vote'] <- round(mean(movies[str_detect(movies[, 'actors'], a), 'avg_vote']), digits = 1)
+  ranked_actors[ranked_actors$noir_actor == a, 'votes'] <- sum(movies[str_detect(movies[, 'actors'], a), 'votes'])
+  ranked_actors[ranked_actors$noir_actor == a, 'noir_avg_vote'] <- round(mean(noir_filter[str_detect(noir_filter[, 'actors'], a), 'avg_vote']), digits = 1)
+  ranked_actors[ranked_actors$noir_actor == a, 'noir_votes'] <- sum(noir_filter[str_detect(noir_filter[, 'actors'], a), 'votes'])
+}
+
+ranked_actors <- ranked_actors[order(-ranked_actors$Freq,-ranked_actors$avg_vote), ]
+
+row.names(ranked_actors) <- 1:nrow(ranked_actors)
+
+my <- c('Actor', 'Noir Films', 'Noir Score', 'Ave. Score', 'Noir Votes', 'All Votes')
+
+#my_pallette <- colorRampPalette(brewer.pal(9, "YlOrRd"))(256)
+
+
+
+# background = ifelse(.$drat > 3, "red", "green"))
+
+ranked_actors %>%
+  kbl("html", escape = F, col.names = my, row.names = T) %>%
+  kable_classic(full_width = T, html_font = "Helvetica") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  column_spec(2,
+              bold = T) %>%
+  column_spec(3,
+              width = "8em",
+              bold = get_text_bold(ranked_actors$Freq),
+              color = get_text_color(ranked_actors$Freq),
+              background = get_background_color(ranked_actors$Freq)) %>%
+  column_spec(4,
+              width = "8em",
+              bold = get_text_bold(ranked_actors$noir_avg_vote),
+              color = get_text_color(ranked_actors$noir_avg_vote),
+              background = get_background_color(ranked_actors$noir_avg_vote)) %>%
+  column_spec(5,
+              width = "8em", bold = get_text_bold(ranked_actors$avg_vote),
+              color = get_text_color(ranked_actors$avg_vote),
+              background = get_background_color(ranked_actors$avg_vote)) %>%
+  column_spec(6,
+              width = "8em",
+              bold = get_text_bold(ranked_actors$noir_votes),
+              color = get_text_color(ranked_actors$noir_votes),
+              background = get_background_color(ranked_actors$noir_votes)) %>%
+  column_spec(7,
+              width = "8em",
+              bold = get_text_bold(ranked_actors$votes),
+              color = get_text_color(ranked_actors$votes),
+              background = get_background_color(ranked_actors$votes))
+
+```
+
+
+# Films by Year
+
+## 1937
+
+In 1937, "The Life of Emile Zola" (1937) won Best Picture at the 10th annual Academy Awards. The works of Emile Zola feature prominantly in the French style of film making known as "poetic realism", though he himself was of the literary school of "naturalism". 1937 was also the year that "Pépé le Moko" was released in France, though it was re-released in 1941 to an American audience. This film seems particularly significant not only in it's noir-like themes, but it also clearly sets the stage for "Casablanca". Therefore, to establish some context for the era in which Film Noir thrived, I've included the top-rated films from 1937 to 1939 for reference.
+
+#### Top 10 Films of any Genre
+```{r, echo=FALSE}
+show_top10_table(prepare_top10_data(imdb_movies, 1937))
+```
+
+
+## 1938
+
+#### Top 10 Films of any Genre
+```{r, echo=FALSE}
+show_top10_table(prepare_top10_data(imdb_movies, 1938))
+```
+
+## 1939
+
+#### Top 10 Films of any Genre
+```{r, echo=FALSE}
+show_top10_table(prepare_top10_data(imdb_movies, 1939))
+```
+
+
+
+## 1940
+
+1940 is sometimes considered the beginning of "classic" Film Noir, so I began listing the Noir productions from that year.
+
+#### Western Productions
+```{r, echo=FALSE}
+show_noir_table(prepare_western_data(imdb_movies, 1970))
+show_noir_table(prepare_western_data(imdb_movies, 1971))
+show_noir_table(prepare_western_data(imdb_movies, 1972))
+show_noir_table(prepare_western_data(imdb_movies, 1973))
+show_noir_table(prepare_western_data(imdb_movies, 1974))
+show_noir_table(prepare_western_data(imdb_movies, 1975))
+show_noir_table(prepare_western_data(imdb_movies, 1976))
+show_noir_table(prepare_western_data(imdb_movies, 1977))
+show_noir_table(prepare_western_data(imdb_movies, 1978))
+show_noir_table(prepare_western_data(imdb_movies, 1979))
+show_noir_table(prepare_western_data(imdb_movies, 1980))
+show_noir_table(prepare_western_data(imdb_movies, 1981))
+show_noir_table(prepare_western_data(imdb_movies, 1982))
+show_noir_table(prepare_western_data(imdb_movies, 1983))
+show_noir_table(prepare_western_data(imdb_movies, 1984))
+show_noir_table(prepare_western_data(imdb_movies, 1985))
+show_noir_table(prepare_western_data(imdb_movies, 1986))
+show_noir_table(prepare_western_data(imdb_movies, 1987))
+show_noir_table(prepare_western_data(imdb_movies, 1988))
+show_noir_table(prepare_western_data(imdb_movies, 1989))
+show_noir_table(prepare_western_data(imdb_movies, 1990))
+show_noir_table(prepare_western_data(imdb_movies, 1991))
+show_noir_table(prepare_western_data(imdb_movies, 1992))
+show_noir_table(prepare_western_data(imdb_movies, 1993))
+show_noir_table(prepare_western_data(imdb_movies, 1994))
+show_noir_table(prepare_western_data(imdb_movies, 1995))
+show_noir_table(prepare_western_data(imdb_movies, 1996))
+show_noir_table(prepare_western_data(imdb_movies, 1997))
+show_noir_table(prepare_western_data(imdb_movies, 1998))
+show_noir_table(prepare_western_data(imdb_movies, 1999))
+
+
+
+```
+
+
+#### Film Noir Productions
+```{r, echo=FALSE}
+show_noir_table(prepare_noir_data(imdb_movies, 1940))
+```
+
+
+<center>
+```{r, echo=FALSE, message=FALSE}
+# Histogram Colored (blue and red)
+options(warn = -1) 
+
+h1 <- data.frame(Ratings = imdb_movies[imdb_movies$year == 1940, c('avg_vote')])
+h2 <- data.frame(Ratings = prepare_noir_data(imdb_movies, 1940)$avg_vote)
+
+h1$Genre <- 'Any'
+h2$Genre <- 'Film-Noir'
+
+plotable <- rbind(h1, h2)
+
+ggplot(plotable, aes(Ratings, fill = Genre)) + geom_density(alpha = 0.2) + xlim(0.2, 9.8) + ylab("Density") + ggtitle("Popularity of Film Noir: 1940", subtitle = "Comparison between the average ratings of all films vs. the ratings of Film Noir movies")
+
+```
+</center>
+
+
+#### Top 10 Contemporaneous Films of any Genre for the same Year
+```{r, echo=FALSE}
+show_top10_table(prepare_top10_data(imdb_movies, 1940))
+```
+
+
+
+
+
+## 1941
+
+#### Film Noir Productions
+```{r, echo=FALSE}
+show_noir_table(prepare_noir_data(imdb_movies, 1941))
+```
+
+<center>
+```{r, echo=FALSE, message=FALSE}
+# Histogram Colored (blue and red)
+options(warn = -1) 
+
+h1 <- data.frame(Ratings = imdb_movies[imdb_movies$year == 1941, c('avg_vote')])
+h2 <- data.frame(Ratings = prepare_noir_data(imdb_movies, 1941)$avg_vote)
+
+h1$Genre <- 'Any'
+h2$Genre <- 'Film-Noir'
+
+plotable <- rbind(h1, h2)
+
+ggplot(plotable, aes(Ratings, fill = Genre)) + geom_density(alpha = 0.2) + xlim(0.2, 9.8) + ylab("Density") + ggtitle("Popularity of Film Noir: 1941", subtitle = "Comparison between the average ratings of all films vs. the ratings of Film Noir movies")
+
+```
+</center>
+
+#### Top 10 Contemporaneous Films of any Genre for the same Year
+```{r, echo=FALSE}
+show_top10_table(prepare_top10_data(imdb_movies, 1941))
+```
+
+
+
+## 1942
+
+#### Film Noir Productions
+```{r, echo=FALSE}
+show_noir_table(prepare_noir_data(imdb_movies, 1942))
+```
+
+<center>
+```{r, echo=FALSE, message=FALSE}
+# Histogram Colored (blue and red)
+options(warn = -1) 
+
+h1 <- data.frame(Ratings = imdb_movies[imdb_movies$year == 1942, c('avg_vote')])
+h2 <- data.frame(Ratings = prepare_noir_data(imdb_movies, 1942)$avg_vote)
+
+h1$Genre <- 'Any'
+h2$Genre <- 'Film-Noir'
+
+plotable <- rbind(h1, h2)
+
+ggplot(plotable, aes(Ratings, fill = Genre)) + geom_density(alpha = 0.2) + xlim(0.2, 9.8) + ylab("Density") + ggtitle("Popularity of Film Noir: 1942", subtitle = "Comparison between the average ratings of all films vs. the ratings of Film Noir movies")
+
+```
+</center>
+
+#### Top 10 Contemporaneous Films of any Genre for the same Year
+```{r, echo=FALSE}
+show_top10_table(prepare_top10_data(imdb_movies, 1942))
+```
+
+
+
+## 1943
+
+#### Film Noir Productions
+```{r, echo=FALSE}
+show_noir_table(prepare_noir_data(imdb_movies, 1943))
+```
+
+<center>
+```{r, echo=FALSE, message=FALSE}
+# Histogram Colored (blue and red)
+options(warn = -1) 
+
+h1 <- data.frame(Ratings = imdb_movies[imdb_movies$year == 1943, c('avg_vote')])
+h2 <- data.frame(Ratings = prepare_noir_data(imdb_movies, 1943)$avg_vote)
+
+h1$Genre <- 'Any'
+h2$Genre <- 'Film-Noir'
+
+plotable <- rbind(h1, h2)
+
+ggplot(plotable, aes(Ratings, fill = Genre)) + geom_density(alpha = 0.2) + xlim(0.2, 9.8) + ylab("Density") + ggtitle("Popularity of Film Noir: 1943", subtitle = "Comparison between the average ratings of all films vs. the ratings of Film Noir movies")
+
+```
+</center>
+
+#### Top 10 Contemporaneous Films of all Genres
+```{r, echo=FALSE}
+show_top10_table(prepare_top10_data(imdb_movies, 1943))
+```
+
+
+## 1944
+
+#### Film Noir Productions
+```{r, echo=FALSE}
+show_noir_table(prepare_noir_data(imdb_movies, 1944))
+```
+
+<center>
+```{r, echo=FALSE, message=FALSE}
+# Histogram Colored (blue and red)
+options(warn = -1) 
+
+h1 <- data.frame(Ratings = imdb_movies[imdb_movies$year == 1944, c('avg_vote')])
+h2 <- data.frame(Ratings = prepare_noir_data(imdb_movies, 1944)$avg_vote)
+
+h1$Genre <- 'Any'
+h2$Genre <- 'Film-Noir'
+
+plotable <- rbind(h1, h2)
+
+ggplot(plotable, aes(Ratings, fill = Genre)) + geom_density(alpha = 0.2) + xlim(0.2, 9.8) + ylab("Density") + ggtitle("Popularity of Film Noir: 1944", subtitle = "Comparison between the average ratings of all films vs. the ratings of Film Noir movies")
+
+```
+</center>
+
+#### Top 10 Contemporaneous Films of all Genres
+```{r, echo=FALSE}
+show_top10_table(prepare_top10_data(imdb_movies, 1944))
+```
+
+
+
+## 1945
+
+#### Film Noir Productions
+```{r, echo=FALSE}
+show_noir_table(prepare_noir_data(imdb_movies, 1945))
+```
+
+<center>
+```{r, echo=FALSE, message=FALSE}
+# Histogram Colored (blue and red)
+options(warn = -1) 
+
+h1 <- data.frame(Ratings = imdb_movies[imdb_movies$year == 1945, c('avg_vote')])
+h2 <- data.frame(Ratings = prepare_noir_data(imdb_movies, 1945)$avg_vote)
+
+h1$Genre <- 'Any'
+h2$Genre <- 'Film-Noir'
+
+plotable <- rbind(h1, h2)
+
+ggplot(plotable, aes(Ratings, fill = Genre)) + geom_density(alpha = 0.2) + xlim(0.2, 9.8) + ylab("Density") + ggtitle("Popularity of Film Noir: 1945", subtitle = "Comparison between the average ratings of all films vs. the ratings of Film Noir movies")
+
+```
+</center>
+
+#### Top 10 Contemporaneous Films of all Genres
+```{r, echo=FALSE}
+show_top10_table(prepare_top10_data(imdb_movies, 1945))
+```
+
+
+## 1946
+
+#### Film Noir Productions
+```{r, echo=FALSE}
+show_noir_table(prepare_noir_data(imdb_movies, 1946))
+```
+
+<center>
+```{r, echo=FALSE, message=FALSE}
+# Histogram Colored (blue and red)
+options(warn = -1) 
+
+h1 <- data.frame(Ratings = imdb_movies[imdb_movies$year == 1946, c('avg_vote')])
+h2 <- data.frame(Ratings = prepare_noir_data(imdb_movies, 1946)$avg_vote)
+
+h1$Genre <- 'Any'
+h2$Genre <- 'Film-Noir'
+
+plotable <- rbind(h1, h2)
+
+ggplot(plotable, aes(Ratings, fill = Genre)) + geom_density(alpha = 0.2) + xlim(0.2, 9.8) + ylab("Density") + ggtitle("Popularity of Film Noir: 1946", subtitle = "Comparison between the average ratings of all films vs. the ratings of Film Noir movies")
+
+```
+</center>
+
+#### Top 10 Contemporaneous Films of all Genres
+```{r, echo=FALSE}
+show_top10_table(prepare_top10_data(imdb_movies, 1946))
+```
+
+
+
+## 1947
+
+#### Film Noir Productions
+```{r, echo=FALSE}
+show_noir_table(prepare_noir_data(imdb_movies, 1947))
+```
+
+<center>
+```{r, echo=FALSE, message=FALSE}
+# Histogram Colored (blue and red)
+options(warn = -1) 
+
+h1 <- data.frame(Ratings = imdb_movies[imdb_movies$year == 1947, c('avg_vote')])
+h2 <- data.frame(Ratings = prepare_noir_data(imdb_movies, 1947)$avg_vote)
+
+h1$Genre <- 'Any'
+h2$Genre <- 'Film-Noir'
+
+plotable <- rbind(h1, h2)
+
+ggplot(plotable, aes(Ratings, fill = Genre)) + geom_density(alpha = 0.2) + xlim(0.2, 9.8) + ylab("Density") + ggtitle("Popularity of Film Noir: 1947", subtitle = "Comparison between the average ratings of all films vs. the ratings of Film Noir movies")
+
+```
+</center>
+
+#### Top 10 Contemporaneous Films of all Genres
+```{r, echo=FALSE}
+show_top10_table(prepare_top10_data(imdb_movies, 1947))
+```
+
+
+
+## 1948
+
+#### Film Noir Productions
+```{r, echo=FALSE}
+show_noir_table(prepare_noir_data(imdb_movies, 1948))
+```
+
+<center>
+```{r, echo=FALSE, message=FALSE}
+# Histogram Colored (blue and red)
+options(warn = -1) 
+
+h1 <- data.frame(Ratings = imdb_movies[imdb_movies$year == 1948, c('avg_vote')])
+h2 <- data.frame(Ratings = prepare_noir_data(imdb_movies, 1948)$avg_vote)
+
+h1$Genre <- 'Any'
+h2$Genre <- 'Film-Noir'
+
+plotable <- rbind(h1, h2)
+
+ggplot(plotable, aes(Ratings, fill = Genre)) + geom_density(alpha = 0.2) + xlim(0.2, 9.8) + ylab("Density") + ggtitle("Popularity of Film Noir: 1948", subtitle = "Comparison between the average ratings of all films vs. the ratings of Film Noir movies")
+
+```
+</center>
+
+#### Top 10 Contemporaneous Films of all Genres
+```{r, echo=FALSE}
+show_top10_table(prepare_top10_data(imdb_movies, 1948))
+```
+
+
+## 1949
+
+#### Film Noir Productions
+```{r, echo=FALSE}
+show_noir_table(prepare_noir_data(imdb_movies, 1949))
+```
+
+<center>
+```{r, echo=FALSE, message=FALSE}
+# Histogram Colored (blue and red)
+options(warn = -1) 
+
+h1 <- data.frame(Ratings = imdb_movies[imdb_movies$year == 1949, c('avg_vote')])
+h2 <- data.frame(Ratings = prepare_noir_data(imdb_movies, 1949)$avg_vote)
+
+h1$Genre <- 'Any'
+h2$Genre <- 'Film-Noir'
+
+plotable <- rbind(h1, h2)
+
+ggplot(plotable, aes(Ratings, fill = Genre)) + geom_density(alpha = 0.2) + xlim(0.2, 9.8) + ylab("Density") + ggtitle("Popularity of Film Noir: 1949", subtitle = "Comparison between the average ratings of all films vs. the ratings of Film Noir movies")
+
+```
+</center>
+
+#### Top 10 Contemporaneous Films of all Genres
+```{r, echo=FALSE}
+show_top10_table(prepare_top10_data(imdb_movies, 1949))
+```
+
+
+
+## 1950
+
+#### Film Noir Productions
+```{r, echo=FALSE}
+show_noir_table(prepare_noir_data(imdb_movies, 1950))
+```
+
+<center>
+```{r, echo=FALSE, message=FALSE}
+# Histogram Colored (blue and red)
+options(warn = -1) 
+
+h1 <- data.frame(Ratings = imdb_movies[imdb_movies$year == 1950, c('avg_vote')])
+h2 <- data.frame(Ratings = prepare_noir_data(imdb_movies, 1950)$avg_vote)
+
+h1$Genre <- 'Any'
+h2$Genre <- 'Film-Noir'
+
+plotable <- rbind(h1, h2)
+
+ggplot(plotable, aes(Ratings, fill = Genre)) + geom_density(alpha = 0.2) + xlim(0.2, 9.8) + ylab("Density") + ggtitle("Popularity of Film Noir: 1950", subtitle = "Comparison between the average ratings of all films vs. the ratings of Film Noir movies")
+
+```
+</center>
+
+#### Top 10 Contemporaneous Films of all Genres
+```{r, echo=FALSE}
+show_top10_table(prepare_top10_data(imdb_movies, 1950))
+```
+
+
+
+
+## 1951
+
+#### Film Noir Productions
+```{r, echo=FALSE}
+show_noir_table(prepare_noir_data(imdb_movies, 1951))
+```
+
+<center>
+```{r, echo=FALSE, message=FALSE}
+# Histogram Colored (blue and red)
+options(warn = -1) 
+
+h1 <- data.frame(Ratings = imdb_movies[imdb_movies$year == 1951, c('avg_vote')])
+h2 <- data.frame(Ratings = prepare_noir_data(imdb_movies, 1951)$avg_vote)
+
+h1$Genre <- 'Any'
+h2$Genre <- 'Film-Noir'
+
+plotable <- rbind(h1, h2)
+
+ggplot(plotable, aes(Ratings, fill = Genre)) + geom_density(alpha = 0.2) + xlim(0.2, 9.8) + ylab("Density") + ggtitle("Popularity of Film Noir: 1951", subtitle = "Comparison between the average ratings of all films vs. the ratings of Film Noir movies")
+
+```
+</center>
+
+#### Top 10 Contemporaneous Films of all Genres
+```{r, echo=FALSE}
+show_top10_table(prepare_top10_data(imdb_movies, 1951))
+```
+
+
+## 1952
+
+#### Film Noir Productions
+```{r, echo=FALSE}
+show_noir_table(prepare_noir_data(imdb_movies, 1952))
+```
+
+<center>
+```{r, echo=FALSE, message=FALSE}
+# Histogram Colored (blue and red)
+options(warn = -1) 
+
+h1 <- data.frame(Ratings = imdb_movies[imdb_movies$year == 1952, c('avg_vote')])
+h2 <- data.frame(Ratings = prepare_noir_data(imdb_movies, 1952)$avg_vote)
+
+h1$Genre <- 'Any'
+h2$Genre <- 'Film-Noir'
+
+plotable <- rbind(h1, h2)
+
+ggplot(plotable, aes(Ratings, fill = Genre)) + geom_density(alpha = 0.2) + xlim(0.2, 9.8) + ylab("Density") + ggtitle("Popularity of Film Noir: 1952", subtitle = "Comparison between the average ratings of all films vs. the ratings of Film Noir movies")
+
+```
+</center>
+
+#### Top 10 Contemporaneous Films of all Genres
+```{r, echo=FALSE}
+show_top10_table(prepare_top10_data(imdb_movies, 1952))
+```
+
+
+## 1953
+
+#### Film Noir Productions
+```{r, echo=FALSE}
+show_noir_table(prepare_noir_data(imdb_movies, 1953))
+```
+
+<center>
+```{r, echo=FALSE, message=FALSE}
+# Histogram Colored (blue and red)
+options(warn = -1) 
+
+h1 <- data.frame(Ratings = imdb_movies[imdb_movies$year == 1953, c('avg_vote')])
+h2 <- data.frame(Ratings = prepare_noir_data(imdb_movies, 1953)$avg_vote)
+
+h1$Genre <- 'Any'
+h2$Genre <- 'Film-Noir'
+
+plotable <- rbind(h1, h2)
+
+ggplot(plotable, aes(Ratings, fill = Genre)) + geom_density(alpha = 0.2) + xlim(0.2, 9.8) + ylab("Density") + ggtitle("Popularity of Film Noir: 1953", subtitle = "Comparison between the average ratings of all films vs. the ratings of Film Noir movies")
+
+```
+</center>
+
+#### Top 10 Contemporaneous Films of all Genres
+```{r, echo=FALSE}
+show_top10_table(prepare_top10_data(imdb_movies, 1953))
+```
+
+
+## 1954
+
+#### Film Noir Productions
+```{r, echo=FALSE}
+show_noir_table(prepare_noir_data(imdb_movies, 1954))
+```
+
+<center>
+```{r, echo=FALSE, message=FALSE}
+# Histogram Colored (blue and red)
+options(warn = -1) 
+
+h1 <- data.frame(Ratings = imdb_movies[imdb_movies$year == 1954, c('avg_vote')])
+h2 <- data.frame(Ratings = prepare_noir_data(imdb_movies, 1954)$avg_vote)
+
+h1$Genre <- 'Any'
+h2$Genre <- 'Film-Noir'
+
+plotable <- rbind(h1, h2)
+
+ggplot(plotable, aes(Ratings, fill = Genre)) + geom_density(alpha = 0.2) + xlim(0.2, 9.8) + ylab("Density") + ggtitle("Popularity of Film Noir: 1954", subtitle = "Comparison between the average ratings of all films vs. the ratings of Film Noir movies")
+
+```
+</center>
+
+#### Top 10 Contemporaneous Films of all Genres
+```{r, echo=FALSE}
+show_top10_table(prepare_top10_data(imdb_movies, 1954))
+```
+
+
+## 1955
+
+#### Film Noir Productions
+```{r, echo=FALSE}
+show_noir_table(prepare_noir_data(imdb_movies, 1955))
+```
+
+<center>
+```{r, echo=FALSE, message=FALSE}
+# Histogram Colored (blue and red)
+options(warn = -1) 
+
+h1 <- data.frame(Ratings = imdb_movies[imdb_movies$year == 1955, c('avg_vote')])
+h2 <- data.frame(Ratings = prepare_noir_data(imdb_movies, 1955)$avg_vote)
+
+h1$Genre <- 'Any'
+h2$Genre <- 'Film-Noir'
+
+plotable <- rbind(h1, h2)
+
+ggplot(plotable, aes(Ratings, fill = Genre)) + geom_density(alpha = 0.2) + xlim(0.2, 9.8) + ylab("Density") + ggtitle("Popularity of Film Noir: 1955", subtitle = "Comparison between the average ratings of all films vs. the ratings of Film Noir movies")
+
+```
+</center>
+
+#### Top 10 Contemporaneous Films of all Genres
+```{r, echo=FALSE}
+show_top10_table(prepare_top10_data(imdb_movies, 1955))
+```
+
+
+
+## 1956
+
+#### Film Noir Productions
+```{r, echo=FALSE}
+show_noir_table(prepare_noir_data(imdb_movies, 1956))
+```
+
+<center>
+```{r, echo=FALSE, message=FALSE}
+# Histogram Colored (blue and red)
+options(warn = -1) 
+
+h1 <- data.frame(Ratings = imdb_movies[imdb_movies$year == 1956, c('avg_vote')])
+h2 <- data.frame(Ratings = prepare_noir_data(imdb_movies, 1956)$avg_vote)
+
+h1$Genre <- 'Any'
+h2$Genre <- 'Film-Noir'
+
+plotable <- rbind(h1, h2)
+
+ggplot(plotable, aes(Ratings, fill = Genre)) + geom_density(alpha = 0.2) + xlim(0.2, 9.8) + ylab("Density") + ggtitle("Popularity of Film Noir: 1956", subtitle = "Comparison between the average ratings of all films vs. the ratings of Film Noir movies")
+
+```
+</center>
+
+#### Top 10 Contemporaneous Films of all Genres
+```{r, echo=FALSE}
+show_top10_table(prepare_top10_data(imdb_movies, 1956))
+```
+
+
+## 1957
+
+#### Film Noir Productions
+```{r, echo=FALSE}
+show_noir_table(prepare_noir_data(imdb_movies, 1957))
+```
+
+<center>
+```{r, echo=FALSE, message=FALSE}
+# Histogram Colored (blue and red)
+options(warn = -1) 
+
+h1 <- data.frame(Ratings = imdb_movies[imdb_movies$year == 1957, c('avg_vote')])
+h2 <- data.frame(Ratings = prepare_noir_data(imdb_movies, 1957)$avg_vote)
+
+h1$Genre <- 'Any'
+h2$Genre <- 'Film-Noir'
+
+plotable <- rbind(h1, h2)
+
+ggplot(plotable, aes(Ratings, fill = Genre)) + geom_density(alpha = 0.2) + xlim(0.2, 9.8) + ylab("Density") + ggtitle("Popularity of Film Noir: 1957", subtitle = "Comparison between the average ratings of all films vs. the ratings of Film Noir movies")
+
+```
+</center>
+
+#### Top 10 Contemporaneous Films of all Genres
+```{r, echo=FALSE}
+show_top10_table(prepare_top10_data(imdb_movies, 1957))
+```
+
+
+
+## 1958
+
+#### Film Noir Productions
+```{r, echo=FALSE}
+show_noir_table(prepare_noir_data(imdb_movies, 1958))
+```
+
+<center>
+```{r, echo=FALSE, message=FALSE}
+# Histogram Colored (blue and red)
+options(warn = -1) 
+
+h1 <- data.frame(Ratings = imdb_movies[imdb_movies$year == 1958, c('avg_vote')])
+h2 <- data.frame(Ratings = prepare_noir_data(imdb_movies, 1958)$avg_vote)
+
+h1$Genre <- 'Any'
+h2$Genre <- 'Film-Noir'
+
+plotable <- rbind(h1, h2)
+
+ggplot(plotable, aes(Ratings, fill = Genre)) + geom_density(alpha = 0.2) + xlim(0.2, 9.8) + ylab("Density") + ggtitle("Popularity of Film Noir: 1958", subtitle = "Comparison between the average ratings of all films vs. the ratings of Film Noir movies")
+
+```
+</center>
+
+#### Top 10 Contemporaneous Films of all Genres
+```{r, echo=FALSE}
+show_top10_table(prepare_top10_data(imdb_movies, 1958))
+```
