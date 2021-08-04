@@ -21,9 +21,9 @@ library(RColorBrewer)
 library(wesanderson)
 
 
-library(lubridate)
+suppressPackageStartupMessages(suppressWarnings(library(lubridate)))
 
-library(tidyverse)
+suppressPackageStartupMessages(suppressWarnings(library(tidyverse)))
 library(knitr)
 #library(timevis)
 
